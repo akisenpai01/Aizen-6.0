@@ -1,4 +1,4 @@
-# Aizen
+git commit -m "first commit"# Aizen
 
 This is a NextJS starter in Firebase Studio, customized into Aizen, an AI assistant with a samurai personality.
 
