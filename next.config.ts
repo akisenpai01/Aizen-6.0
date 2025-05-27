@@ -38,8 +38,9 @@ const nextConfig: NextConfig = {
         child_process: false,
         http2: false,
         dns: false,
-        async_hooks: false, // Add async_hooks
-        // You might need to add other Node.js core modules here if they cause issues
+        async_hooks: false,
+        'node:async_hooks': false, // Explicitly handle node:async_hooks
+        // You might need to add other Node.js core modules with 'node:' prefix here if they cause issues
       };
     }
     return config;
