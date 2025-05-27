@@ -1,15 +1,16 @@
 
 "use client";
 
-import type { FormEvent, SpeechSynthesisVoice } from "react"; // Added SpeechSynthesisVoice for prop type
+import type { FormEvent, SpeechSynthesisVoice } from "react";
 import React, { useState, useEffect, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { InputBar } from "@/components/roninai/InputBar";
 import { MessageBubble } from "@/components/roninai/MessageBubble";
-// VoiceSelector import removed
 import { generateSamuraiResponse } from "@/ai/flows/generate-samurai-response";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { db } from "@/lib/firebase"; // Import Firestore instance
+import { collection, doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 
 interface Message {
   id: string;
@@ -18,7 +19,6 @@ interface Message {
   timestamp: Date;
 }
 
-// Fallback for SpeechRecognition
 const SpeechRecognition =
   typeof window !== "undefined"
     ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -33,11 +33,10 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  // selectedVoice, availableVoices states and loadVoices logic removed
 
   const { toast } = useToast();
   const scrollViewportRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null); 
+  const recognitionRef = useRef<any>(null);
 
   const scrollToBottom = () => {
     if (scrollViewportRef.current) {
@@ -52,10 +51,7 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
     scrollToBottom();
   }, [messages]);
 
-
   useEffect(() => {
-    // Voice loading logic is now in page.tsx
-
     if (SpeechRecognition) {
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = false;
@@ -66,14 +62,21 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
         const transcript = event.results[0][0].transcript;
         setInputValue(transcript);
         setIsListening(false);
-        // handleSubmit(transcript); // Auto-send after STT
       };
 
       recognitionRef.current.onerror = (event: any) => {
         console.error("Speech recognition error", event.error);
+        let description = "An error occurred during speech recognition.";
+        if (event.error === 'no-speech') {
+          description = "No speech was detected. Please try again.";
+        } else if (event.error === 'audio-capture') {
+          description = "Audio capture failed. Please ensure your microphone is working and permissions are enabled.";
+        } else if (event.error === 'not-allowed') {
+          description = "Microphone access was denied. Please enable microphone permissions in your browser settings for this site.";
+        }
         toast({
           title: "Speech Recognition Error",
-          description: event.error === 'no-speech' ? "No speech detected." : event.error === 'audio-capture' ? "Audio capture failed. Check microphone." : "An error occurred.",
+          description: description,
           variant: "destructive",
         });
         setIsListening(false);
@@ -83,7 +86,7 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
         setIsListening(false);
       };
     } else {
-       if (typeof window !== 'undefined') { // Only show toast on client
+       if (typeof window !== 'undefined') {
         toast({
           title: "Feature Not Available",
           description: "Speech recognition is not supported by your browser.",
@@ -93,7 +96,7 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
     }
     return () => {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel(); // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
       }
       if (recognitionRef.current) {
         recognitionRef.current.abort();
@@ -103,16 +106,16 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
 
   const speak = (text: string) => {
     if (typeof window !== 'undefined' && window.speechSynthesis && text) {
-      window.speechSynthesis.cancel(); // Cancel previous speech
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      if (selectedVoice) { // Use prop selectedVoice
+      if (selectedVoice) {
         utterance.voice = selectedVoice;
       }
       utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
-        console.error("Speech synthesis error:", event.error);
+        console.error("Speech synthesis error:", event.error, event);
         toast({
           title: "Text-to-Speech Error",
-          description: `Could not play audio response. Error: ${event.error}`,
+          description: `Could not play audio response. Error: ${event.error || 'Unknown error'}`,
           variant: "destructive",
         });
       };
@@ -123,9 +126,12 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
 
+    const userInput = text.trim();
+    const normalizedUserInput = userInput.toLowerCase(); // Normalize for caching
+
     const newUserMessage: Message = {
       id: Date.now().toString(),
-      text: text.trim(),
+      text: userInput,
       sender: "user",
       timestamp: new Date(),
     };
@@ -134,20 +140,50 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
     setIsLoading(true);
 
     try {
-      const response = await generateSamuraiResponse({ userInput: text.trim() });
+      // Check cache first
+      const cacheDocRef = doc(db, "cachedResponses", normalizedUserInput);
+      const cacheDocSnap = await getDoc(cacheDocRef);
+
+      let aiResponseText: string;
+
+      if (cacheDocSnap.exists()) {
+        aiResponseText = cacheDocSnap.data().aiResponse;
+        toast({
+          title: "Aizen Recalls...",
+          description: "This wisdom has been shared before.",
+          variant: "default",
+        });
+      } else {
+        const response = await generateSamuraiResponse({ userInput: userInput });
+        aiResponseText = response.samuraiResponse;
+        // Save to cache
+        await setDoc(cacheDocRef, { 
+          userInput: normalizedUserInput, 
+          aiResponse: aiResponseText,
+          createdAt: Timestamp.now() 
+        });
+      }
+
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: response.samuraiResponse,
+        text: aiResponseText,
         sender: "ai",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiMessage]);
-      speak(response.samuraiResponse);
-    } catch (error) {
-      console.error("Error generating AI response:", error);
+      speak(aiResponseText);
+
+    } catch (error: any) {
+      console.error("Error processing message:", error);
+      let errorTitle = "AI Response Error";
+      let errorMessage = "Failed to get a response from the samurai.";
+      if (error.message?.includes("firestore")) {
+        errorTitle = "Database Error";
+        errorMessage = "Could not access sabiduría from the archives. Ensure Firebase is configured correctly."
+      }
       toast({
-        title: "AI Response Error",
-        description: "Failed to get a response from the samurai.",
+        title: errorTitle,
+        description: errorMessage,
         variant: "destructive",
       });
        const aiErrorMessage: Message = {
@@ -184,12 +220,11 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
       setIsListening(false);
     } else {
       try {
-        recognitionRef.current?.abort(); // Abort any previous recognition attempt
+        recognitionRef.current?.abort();
         recognitionRef.current?.start();
         setIsListening(true);
       } catch (error: any) {
         console.error("Error starting speech recognition:", error);
-        // Check if the error is due to recognition already started
         if (error.name === 'InvalidStateError') {
           toast({
             title: "Speech Recognition Active",
@@ -199,20 +234,18 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
         } else {
           toast({
             title: "Speech Recognition Error",
-            description: "Could not start voice input. Try again or check permissions.",
+            description: "Could not start voice input. Ensure microphone permissions are granted.",
             variant: "destructive",
           });
         }
-        setIsListening(false); // Ensure listening state is reset
+        setIsListening(false);
       }
     }
   };
 
   return (
-    <div className="flex flex-col w-full h-full bg-transparent overflow-hidden"> {/* Adjusted for full screen and transparency */}
-      {/* Header removed as per previous request to make chatbox full screen */}
-      
-      <ScrollArea className="flex-grow p-4" viewportRef={scrollViewportRef}> {/* Added padding here for messages */}
+    <div className="flex flex-col w-full h-full bg-transparent overflow-hidden">
+      <ScrollArea className="flex-grow p-4" viewportRef={scrollViewportRef}>
         <div className="space-y-4">
           {messages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} />
@@ -233,9 +266,7 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
         isListening={isListening}
         onMicClick={handleMicClick}
         isLoading={isLoading}
-        // The form itself should not need suppressHydrationWarning if InputBar manages client-side state correctly
       />
     </div>
   );
 }
-
