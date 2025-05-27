@@ -1,5 +1,4 @@
-// use server'
-'use server';
+
 /**
  * @fileOverview An AI agent that generates responses in the style of a samurai.
  *
