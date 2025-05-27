@@ -36,6 +36,7 @@ const nextConfig: NextConfig = {
         tls: false,
         net: false,
         child_process: false,
+        http2: false, // Add http2
         // You might need to add other Node.js core modules here if they cause issues
       };
     }
