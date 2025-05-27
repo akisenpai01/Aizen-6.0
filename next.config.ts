@@ -29,12 +29,14 @@ const nextConfig: NextConfig = {
   },
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      // Prevent fs module from being bundled on the client
+      // Prevent Node.js core modules from being bundled on the client
       config.resolve.fallback = {
         ...config.resolve.fallback, // Spread existing fallbacks if any
         fs: false,
+        tls: false,
+        net: false,
+        child_process: false,
         // You might need to add other Node.js core modules here if they cause issues
-        // e.g., net: false, tls: false, child_process: false,
       };
     }
     return config;
