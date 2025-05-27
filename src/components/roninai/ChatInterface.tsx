@@ -9,8 +9,7 @@ import { MessageBubble } from "@/components/roninai/MessageBubble";
 import { generateSamuraiResponse } from "@/ai/flows/generate-samurai-response";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
-import { db } from "@/lib/firebase"; // Import Firestore instance
-import { collection, doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
+// import { Storage } from '@capacitor/storage'; // Capacitor Storage temporarily disabled
 
 interface Message {
   id: string;
@@ -71,8 +70,8 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
           description = "No speech was detected. Please try again.";
         } else if (event.error === 'audio-capture') {
           description = "Audio capture failed. Please ensure your microphone is working and permissions are enabled.";
-        } else if (event.error === 'not-allowed') {
-          description = "Microphone access was denied. Please enable microphone permissions in your browser settings for this site.";
+        } else if (event.error === 'not-allowed' || event.error === 'permissions-denied') {
+          description = "Microphone access was denied. Please enable microphone permissions in your browser/app settings.";
         }
         toast({
           title: "Speech Recognition Error",
@@ -127,7 +126,7 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
     if (!text.trim() || isLoading) return;
 
     const userInput = text.trim();
-    const normalizedUserInput = userInput.toLowerCase(); // Normalize for caching
+    // const normalizedUserInput = userInput.toLowerCase(); // Normalization for caching, currently disabled
 
     const newUserMessage: Message = {
       id: Date.now().toString(),
@@ -140,29 +139,26 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
     setIsLoading(true);
 
     try {
-      // Check cache first
-      const cacheDocRef = doc(db, "cachedResponses", normalizedUserInput);
-      const cacheDocSnap = await getDoc(cacheDocRef);
-
+      // Local caching with Capacitor Storage is temporarily disabled due to installation issues.
+      // const { value: cachedResponseString } = await Storage.get({ key: normalizedUserInput });
       let aiResponseText: string;
 
-      if (cacheDocSnap.exists()) {
-        aiResponseText = cacheDocSnap.data().aiResponse;
-        toast({
-          title: "Aizen Recalls...",
-          description: "This wisdom has been shared before.",
-          variant: "default",
-        });
-      } else {
+      // if (cachedResponseString) {
+      //   aiResponseText = cachedResponseString;
+      //   toast({
+      //     title: "Aizen Recalls...",
+      //     description: "This wisdom has been shared before from local memory.",
+      //     variant: "default",
+      //   });
+      // } else {
         const response = await generateSamuraiResponse({ userInput: userInput });
         aiResponseText = response.samuraiResponse;
-        // Save to cache
-        await setDoc(cacheDocRef, { 
-          userInput: normalizedUserInput, 
-          aiResponse: aiResponseText,
-          createdAt: Timestamp.now() 
-        });
-      }
+        // Save to local storage cache - temporarily disabled
+        // await Storage.set({
+        //   key: normalizedUserInput,
+        //   value: aiResponseText,
+        // });
+      // }
 
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -175,15 +171,9 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
 
     } catch (error: any) {
       console.error("Error processing message:", error);
-      let errorTitle = "AI Response Error";
-      let errorMessage = "Failed to get a response from the samurai.";
-      if (error.message?.includes("firestore")) {
-        errorTitle = "Database Error";
-        errorMessage = "Could not access sabiduría from the archives. Ensure Firebase is configured correctly."
-      }
       toast({
-        title: errorTitle,
-        description: errorMessage,
+        title: "AI Response Error",
+        description: "Failed to get a response from the samurai.",
         variant: "destructive",
       });
        const aiErrorMessage: Message = {
@@ -220,18 +210,25 @@ export default function ChatInterface({ selectedVoice }: ChatInterfaceProps) {
       setIsListening(false);
     } else {
       try {
-        recognitionRef.current?.abort();
+        recognitionRef.current?.abort(); 
         recognitionRef.current?.start();
         setIsListening(true);
       } catch (error: any) {
         console.error("Error starting speech recognition:", error);
         if (error.name === 'InvalidStateError') {
           toast({
-            title: "Speech Recognition Active",
-            description: "Voice input is already active or processing.",
+            title: "Speech Recognition Busy",
+            description: "Voice input is already active or processing. Please wait a moment.",
             variant: "default",
           });
-        } else {
+        } else if (error.name === 'NotAllowedError' || error.message?.includes('permissions')) {
+             toast({
+                title: "Microphone Access Denied",
+                description: "Please enable microphone permissions in your browser/app settings for this site.",
+                variant: "destructive",
+            });
+        }
+        else {
           toast({
             title: "Speech Recognition Error",
             description: "Could not start voice input. Ensure microphone permissions are granted.",

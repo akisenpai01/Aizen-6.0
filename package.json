@@ -17,11 +17,12 @@
     "cap:add-android": "npx capacitor add android"
   },
   "dependencies": {
+    "@capacitor-community/bluetooth-le": "6.0.0",
     "@capacitor/android": "^6.0.0",
     "@capacitor/camera": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@capacitor/filesystem": "^6.0.0",
-    "@capacitor/geolocation": "^6.0.0",
+    "@capacitor/geolocation": "6.0.0",
     "@capacitor/motion": "^6.0.0",
     "@capacitor/network": "^6.0.0",
     "@capacitor/splash-screen": "^6.0.0",
@@ -54,7 +55,6 @@
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "dotenv": "^16.5.0",
-    "firebase": "^10.12.2",
     "genkit": "^1.8.0",
     "lucide-react": "^0.475.0",
     "next": "15.2.3",
