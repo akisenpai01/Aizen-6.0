@@ -37,7 +37,8 @@ const nextConfig: NextConfig = {
         net: false,
         child_process: false,
         http2: false,
-        dns: false, // Add dns
+        dns: false,
+        async_hooks: false, // Add async_hooks
         // You might need to add other Node.js core modules here if they cause issues
       };
     }
